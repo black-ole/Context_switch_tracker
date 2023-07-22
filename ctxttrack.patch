@@ -1,0 +1,147 @@
+diff -rupN linux-change/arch/x86/entry/syscalls/syscall_64.tbl linux-base/arch/x86/entry/syscalls/syscall_64.tbl
+--- linux-change/arch/x86/entry/syscalls/syscall_64.tbl	2023-02-13 22:20:32.900000202 +0530
++++ linux-base/arch/x86/entry/syscalls/syscall_64.tbl	2023-02-09 15:58:28.000000000 +0530
+@@ -372,9 +372,7 @@
+ 448	common	process_mrelease	sys_process_mrelease
+ 449	common	futex_waitv		sys_futex_waitv
+ 450	common	set_mempolicy_home_node	sys_set_mempolicy_home_node
+-451	common	register		sys_register
+-452	common	fetch			sys_fetch
+-453	common	deregister		sys_deregister
++
+ #
+ # Due to a historical design error, certain syscalls are numbered differently
+ # in x32 as compared to native x86_64.  These syscalls have numbers 512-547.
+diff -rupN linux-change/kernel/sys.c linux-base/kernel/sys.c
+--- linux-change/kernel/sys.c	2023-02-13 22:24:28.060000314 +0530
++++ linux-base/kernel/sys.c	2023-02-09 15:58:28.000000000 +0530
+@@ -45,10 +45,6 @@
+ #include <linux/ctype.h>
+ #include <linux/syscall_user_dispatch.h>
+ 
+-//blackole
+-#include <linux/list.h>
+-#include <linux/types.h>
+-
+ #include <linux/compat.h>
+ #include <linux/syscalls.h>
+ #include <linux/kprobes.h>
+@@ -212,118 +208,6 @@ out:
+ 	return error;
+ }
+ 
+-// blackole
+-
+-struct pid_node {
+-	pid_t pid;
+-	struct list_head next_prev_list;
+-};
+-
+-struct pid_ctxt_switch {
+-	unsigned long ninvctxt ;
+-	unsigned long nvctxt ;
+-};
+-
+-LIST_HEAD(head_node) ;
+-
+-SYSCALL_DEFINE1(register, pid_t , pid)
+-{
+-	struct task_struct *task;
+-	struct pid_node *entry;
+-	struct pid_node *entryl;
+-	struct list_head *ptr;
+-	unsigned long check = 1;
+-
+-	if( pid < 1){
+-		return EINVAL;
+-	}
+-
+-	task = find_task_by_vpid(pid);
+-
+-	if(!task){
+-		return ESRCH;
+-	}
+-	
+-	list_for_each(ptr , &head_node){
+-		entryl = list_entry(ptr, struct pid_node, next_prev_list);
+-		if(entryl->pid == pid){
+-			check = 0;
+-		}
+-	}
+-	
+-	if(check){
+-		entry = kmalloc(sizeof(struct pid_node *), GFP_KERNEL);
+-
+-		entry->pid = pid ;
+-	
+-		INIT_LIST_HEAD(&entry->next_prev_list);
+-
+-		list_add(&entry->next_prev_list, &head_node);
+-	}
+-	
+-	
+-	return 0;
+-}
+-
+-SYSCALL_DEFINE1(fetch, struct pid_ctxt_switch *, stats)
+-{
+-	struct list_head *ptr;
+-	struct pid_node *entry;
+-	unsigned long ret;
+-	pid_t pid;
+-	struct task_struct *task;
+-	struct pid_ctxt_switch stt;
+-	stt.ninvctxt = 0;
+-	stt.nvctxt = 0;
+-
+-	list_for_each(ptr, &head_node){
+-		
+-		entry = list_entry(ptr, struct pid_node, next_prev_list);	
+-		pid = entry->pid;
+-
+-		task = find_task_by_vpid(pid);
+-
+-		stt.ninvctxt += task->nivcsw;
+-		stt.nvctxt += task->nvcsw;
+-	}
+-	ret = copy_to_user(stats , &stt, sizeof(struct pid_ctxt_switch));
+-
+-	if(ret){
+-		return EINVAL;
+-	}
+-	return 0;
+-	
+-}
+-
+-
+-SYSCALL_DEFINE1(deregister, pid_t, pid)
+-{
+-	struct list_head *ptr;
+-	struct pid_node *entry;
+-	struct list_head *n;
+-	unsigned long check = 1;
+-
+-	if(pid < 1){
+-		return EINVAL;
+-	}
+-	
+-	list_for_each_safe(ptr,n,&head_node){
+-		entry = list_entry(ptr, struct pid_node, next_prev_list);
+-		if(entry->pid == pid){
+-			check = 0;
+-			list_del(&entry->next_prev_list);		
+-		}
+-	}
+-
+-	if(check){
+-		return ESRCH;
+-	}
+-
+-	return 0;
+-}
+-
+-
+-
+ SYSCALL_DEFINE3(setpriority, int, which, int, who, int, niceval)
+ {
+ 	struct task_struct *g, *p;
